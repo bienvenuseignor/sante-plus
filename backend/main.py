@@ -1,13 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# Routes existantes
-from routes import hospitals, appointments, wallet, documents, access
-
-# Nouvelles routes
-from auth_simple import router as auth_router
-from lightning_simple import router as lightning_router
+from backend.routes import hospitals, appointments, wallet, documents, access
 
 app = FastAPI(
     title="Santé+ Bénin",
@@ -24,9 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Toutes les routes
-app.include_router(auth_router)
-app.include_router(lightning_router)
+# Routes
 app.include_router(hospitals.router)
 app.include_router(appointments.router)
 app.include_router(wallet.router)

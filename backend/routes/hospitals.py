@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict
-from models import Hospital, Review
+from backend.models import Hospital, Review
 import uuid
 from datetime import datetime
-from data_mock import HOSPITALS_DB
+from backend.data_mock import HOSPITALS_DB
 
 router = APIRouter(prefix="/api/hospitals", tags=["hospitals"])
 

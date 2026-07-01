@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict
-from models import MedicalDocument
+from backend.models import MedicalDocument
 import uuid
-from data_mock import DOCUMENTS_DB, XOF_TO_SATS
+from backend.data_mock import DOCUMENTS_DB, XOF_TO_SATS
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 

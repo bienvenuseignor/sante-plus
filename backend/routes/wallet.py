@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List, Dict, Optional
-from models import Invoice, Patient
+from backend.models import Invoice, Patient
 import uuid
 from datetime import datetime
-from data_mock import PATIENTS_DB, INVOICES_DB, XOF_TO_SATS
+from backend.data_mock import PATIENTS_DB, INVOICES_DB, XOF_TO_SATS
 
 router = APIRouter(prefix="/api/wallet", tags=["wallet"])
 

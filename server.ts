@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import crypto from "crypto";
 
 // Seed Databases in-memory
 const XOF_TO_SATS = 1.666;
@@ -213,6 +214,53 @@ let PATIENTS_DB: Record<string, any> = {
     npi: "2095341278102",
     avatar: "AD"
   }
+};
+
+let MEDICAL_RECORDS_DB: Record<string, any[]> = {
+  "1097885544901": [
+    {
+      id: 'cons-001',
+      date: '28 Juin 2026',
+      time: '10:30',
+      doctor: 'Dr Jean Sossou',
+      hospital: 'CHD Atlantique',
+      reason: 'Consultation Générale',
+      diagnosis: 'Malaria (stade précoce)',
+      prescription: 'Chloroquine 500mg x3 jours',
+      notes: 'Patient stable, suivi recommandé',
+      verified: true,
+      timestamp: 1719579000,
+      hash: '0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d'
+    },
+    {
+      id: 'cons-002',
+      date: '20 Juin 2026',
+      time: '14:15',
+      doctor: 'Dr Marie Mensah',
+      hospital: 'Clinique Bénin Plus',
+      reason: 'Consultation Dentaire',
+      diagnosis: 'Détartrage + nettoyage',
+      prescription: 'Pas de prescription',
+      notes: 'Hygiène dentaire bonne, prophylaxie OK',
+      verified: true,
+      timestamp: 1718895300,
+      hash: '0x9f8e7d6c5b4a3f2e1d0c1b2a3f4e5d6c'
+    },
+    {
+      id: 'cons-003',
+      date: '10 Juin 2026',
+      time: '09:00',
+      doctor: 'Dr Kofi Mensah',
+      hospital: 'CHU Cotonou',
+      reason: 'Visite d\'urgence',
+      diagnosis: 'Gastroentérite bénigne',
+      prescription: 'Réhydratation orale + Antidiarrhéique',
+      notes: 'Récupération rapide après traitement',
+      verified: true,
+      timestamp: 1717984800,
+      hash: '0x7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f'
+    }
+  ]
 };
 
 let HOSPITAL_USERS_DB = [
@@ -750,6 +798,82 @@ async function startServer() {
 
     request.status = status;
     res.json(request);
+  });
+
+  // 14b. GET MEDICAL RECORDS
+  app.get("/api/medical-records/:npi", (req, res) => {
+    const { npi } = req.params;
+    const records = MEDICAL_RECORDS_DB[npi] || [];
+    res.json(records);
+  });
+
+  // 14c. POST ADD MEDICAL RECORD (WITH BITCOIN ANCHOR SIMULATION)
+  app.post("/api/medical-records/:npi", (req, res) => {
+    const { npi } = req.params;
+    const { doctor, hospital, reason, diagnosis, prescription, notes, treatmentPlan, medication, dosage, frequency, duration, followUp } = req.body;
+
+    if (!doctor || !hospital || !diagnosis) {
+      return res.status(400).json({ error: "Le médecin, l'hôpital et le diagnostic sont requis." });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const newRecord = {
+      id: `cons-${Date.now()}`,
+      date: new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'long', year: 'numeric' }),
+      time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      doctor,
+      hospital,
+      reason: reason || 'Consultation Générale',
+      diagnosis,
+      prescription: prescription || 'Pas de prescription',
+      notes: notes || '',
+      treatmentPlan: treatmentPlan || '',
+      medication: medication || '',
+      dosage: dosage || '',
+      frequency: frequency || '',
+      duration: duration || '',
+      followUp: followUp || '',
+      verified: true,
+      timestamp,
+      hash: ''
+    };
+
+    // Calculate SHA-256 hash using Node's crypto module
+    const dataString = JSON.stringify({
+      date: newRecord.date,
+      time: newRecord.time,
+      doctor: newRecord.doctor,
+      hospital: newRecord.hospital,
+      reason: newRecord.reason,
+      diagnosis: newRecord.diagnosis,
+      prescription: newRecord.prescription,
+      notes: newRecord.notes,
+      timestamp: newRecord.timestamp
+    });
+
+    const sha256 = crypto.createHash('sha256').update(dataString).digest('hex');
+    newRecord.hash = `0x${sha256}`;
+
+    // Append to patient record list
+    if (!MEDICAL_RECORDS_DB[npi]) {
+      MEDICAL_RECORDS_DB[npi] = [];
+    }
+    
+    // Add to the beginning of the list
+    MEDICAL_RECORDS_DB[npi].unshift(newRecord);
+
+    // Simulate blockchain transaction hash anchoring (this would be on Bitcoin blockchain)
+    const characters = '0123456789abcdef';
+    let blockTxHash = '0000000000000000';
+    for (let i = 0; i < 48; i++) {
+      blockTxHash += characters.charAt(Math.floor(Math.random() * 16));
+    }
+
+    res.status(201).json({
+      success: true,
+      record: newRecord,
+      blockchainTxHash: blockTxHash
+    });
   });
 
   // 15. AI CHATBOT (GEMINI OR EMBEDDED PROCEDURAL RULES)

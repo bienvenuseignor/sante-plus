@@ -8,6 +8,7 @@ import PaymentFlow from './components/PaymentFlow';
 import WalletTab from './components/WalletTab';
 import Auth from './components/Auth';
 import HospitalDashboard from './components/HospitalDashboard';
+import MedicalRecordViewer from './components/MedicalRecordViewer';
 import LandingPage from './components/LandingPage';
 import { 
   Map as MapIcon, Wallet, Calendar, User, ShieldCheck, 
@@ -435,6 +436,18 @@ export default function App() {
                   <Calendar className="w-4 h-4" />
                   Rendez-vous ({appointments.length})
                 </button>
+
+                <button
+                  onClick={() => { setView('medical-record'); }}
+                  className={`px-4 py-2 rounded-xl text-xs font-sans font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                    view === 'medical-record'
+                      ? 'bg-white text-[#059669] shadow-xs'
+                      : 'text-gray-500 hover:text-gray-800'
+                  }`}
+                >
+                  <Lock className="w-4 h-4" />
+                  Dossier Médical
+                </button>
               </>
             )}
           </nav>
@@ -712,6 +725,21 @@ export default function App() {
                 onApproveAccess={handleApproveAccessRequest}
                 onRejectAccess={handleRejectAccessRequest}
                 patientUser={patientUser}
+              />
+            </motion.div>
+          )}
+
+          {/* VIEW: MEDICAL RECORD VIEWER (DOSSIER MÉDICAL SÉCURISÉ) */}
+          {view === 'medical-record' && (
+            <motion.div
+              key="medical-record-view"
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -15 }}
+            >
+              <MedicalRecordViewer
+                patientUser={patientUser}
+                onBack={() => setView('map')}
               />
             </motion.div>
           )}

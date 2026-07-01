@@ -73,6 +73,8 @@ export interface Invoice {
 
 export interface Patient {
   name: string;
+  fullName?: string;
+  id?: string;
   email: string;
   phone: string;
   walletBalance: number;
@@ -98,5 +100,27 @@ export interface AccessRequest {
   blockchainTxHash?: string;
 }
 
-export type AppView = 'landing' | 'map' | 'hospital-details' | 'payment-flow' | 'wallet' | 'appointments' | 'auth' | 'hospital-dashboard';
+export interface MedicalConsultation {
+  id: string;
+  date: string;
+  time: string;
+  doctor: string;
+  hospital: string;
+  reason: string;
+  diagnosis: string;
+  prescription: string;
+  notes: string;
+  treatmentPlan?: string;
+  medication?: string;
+  dosage?: string;
+  frequency?: string;
+  duration?: string;
+  followUp?: string;
+  verified: boolean;
+  timestamp: number;
+  hash: string;
+}
+
+export type AppView = 'landing' | 'map' | 'hospital-details' | 'payment-flow' | 'wallet' | 'appointments' | 'auth' | 'hospital-dashboard' | 'medical-record';
+
 

@@ -4,3 +4,7 @@ pydantic==2.5.0
 pyjwt==2.8.0
 passlib==1.7.4
 python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+cryptography==43.0.0
+sqlalchemy==2.0.36
+alembic==1.13.2

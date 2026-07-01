@@ -1,9 +1,9 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List
-from models import AccessRequest
+from backend.models import AccessRequest
 import uuid
 from datetime import datetime
-from data_mock import ACCESS_REQUESTS_DB
+from backend.data_mock import ACCESS_REQUESTS_DB
 
 router = APIRouter(prefix="/api/access-requests", tags=["access-requests"])
 

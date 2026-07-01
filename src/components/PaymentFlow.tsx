@@ -404,6 +404,23 @@ export default function PaymentFlow({
               exit={{ opacity: 0, y: -15 }}
               className="flex-1 flex flex-col space-y-6"
             >
+              {/* Bitcoin & Breez Importance Info */}
+              <div className="bg-gradient-to-r from-orange-50 to-amber-50 border-2 border-orange-300 rounded-2xl p-5">
+                <div className="flex gap-3">
+                  <div className="text-2xl">₿</div>
+                  <div>
+                    <h3 className="font-bold text-orange-900 mb-2 text-sm">Pourquoi Bitcoin + Lightning Network (Breez)?</h3>
+                    <ul className="text-xs text-orange-800 space-y-1.5">
+                      <li>✅ <strong>Pas d'intermédiaire:</strong> Transactions directes patient ↔️ hôpital</li>
+                      <li>✅ <strong>Frais réduits:</strong> ~0.5% vs 3-5% avec cartes classiques</li>
+                      <li>✅ <strong>Transactions instantanées:</strong> Lightning Network délivre en &lt;1 sec</li>
+                      <li>✅ <strong>Accès global:</strong> Pas de compte bancaire requis, juste une connexion Internet</li>
+                      <li>✅ <strong>Sécurité maximale:</strong> Vos données ne quittent jamais votre téléphone</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
               {/* Cost recall */}
               <div className="text-center pb-2">
                 <span className="text-xs text-gray-400 font-sans uppercase tracking-wider font-medium">Facture en cours de règlement</span>

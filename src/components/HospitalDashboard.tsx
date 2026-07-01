@@ -1,11 +1,14 @@
-import React, { useState } from 'react';
-import { HospitalUser, Hospital, Appointment, Invoice, MedicalDocument, AccessRequest } from '../types';
+import React, { useState, useEffect } from 'react';
+import { HospitalUser, Hospital, Appointment, Invoice, MedicalDocument, AccessRequest, MedicalConsultation } from '../types';
 import { HOSPITALS, XOF_TO_SATS, SAMPLE_PATIENTS } from '../data';
 import { 
   Building2, Calendar, ClipboardList, PlusCircle, Trash2, 
   FileText, CheckSquare, TrendingUp, Download, LogOut, 
-  Check, ShieldAlert, Sparkles, User, ShieldCheck, Search, Lock, Unlock, RefreshCw, AlertCircle
+  Check, ShieldAlert, Sparkles, User, ShieldCheck, Search, Lock, Unlock, RefreshCw, AlertCircle,
+  QrCode, Scan, Plus, CheckCircle2, Eye, Hash, Database, Shield
 } from 'lucide-react';
+import QRScanner from './QRScanner';
+
 import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -55,6 +58,7 @@ export default function HospitalDashboard({
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'emit' | 'appointments' | 'finances'>('emit');
+  const [praticienSubTab, setPraticienSubTab] = useState<'consultations' | 'billing'>('consultations');
 
   // Form states for emitting document
   const [patientName, setPatientName] = useState('Bienvenue Segnon');
@@ -73,6 +77,165 @@ export default function HospitalDashboard({
   const [searchNpi, setSearchNpi] = useState('1097885544901'); // prefilled with Bienvenue's NPI for easy demo
   const [searchedPatient, setSearchedPatient] = useState<any | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
+
+  // QR Code camera scan and record update states
+  const [showScanner, setShowScanner] = useState(false);
+  const [unlockedRecordNpi, setUnlockedRecordNpi] = useState<string | null>(null);
+  const [unlockedPatient, setUnlockedPatient] = useState<any | null>(null);
+  const [consultationsList, setConsultationsList] = useState<MedicalConsultation[]>([]);
+  const [expandedConsultationId, setExpandedConsultationId] = useState<string | null>(null);
+  const [showAddRecordForm, setShowAddRecordForm] = useState(false);
+  const [blockchainSuccessMsg, setBlockchainSuccessMsg] = useState<{ recordId: string, txHash: string } | null>(null);
+  const [newRecordInput, setNewRecordInput] = useState({
+    doctor: user.name || 'Dr. Jean Sossou',
+    hospital: hospital.name,
+    reason: '',
+    diagnosis: '',
+    prescription: '',
+    notes: '',
+    treatmentPlan: '',
+    medication: '',
+    dosage: '',
+    frequency: '',
+    duration: '',
+    followUp: ''
+  });
+
+  // Fetch medical history for the unlocked patient
+  const fetchMedicalRecords = (npi: string) => {
+    fetch(`/api/medical-records/${npi}`)
+      .then(res => res.json())
+      .then(data => {
+        if (Array.isArray(data)) {
+          setConsultationsList(data);
+        }
+      })
+      .catch(err => {
+        console.warn("Could not fetch patient medical records from server", err);
+        // Try localstorage fallback
+        const localData = localStorage.getItem(`medical_records_${npi}`);
+        if (localData) {
+          try {
+            setConsultationsList(JSON.parse(localData));
+          } catch {
+            setConsultationsList([]);
+          }
+        } else {
+          setConsultationsList([]);
+        }
+      });
+  };
+
+  const handleScanQR = (scannedData: string) => {
+    setShowScanner(false);
+    
+    // Parse the payload e.g. "santeplus://medical-record/1097885544901?token=SANTEPLUS-1097885544901-XYZ"
+    const regex = /santeplus:\/\/medical-record\/([^?]+)(?:\?token=(.+))?/;
+    const match = scannedData.match(regex);
+    
+    if (match) {
+      const npi = match[1];
+      const token = match[2] || '';
+      
+      const patient = SAMPLE_PATIENTS.find(p => p.npi === npi);
+      if (patient) {
+        setUnlockedRecordNpi(npi);
+        setUnlockedPatient(patient);
+        setSearchNpi(npi);
+        setSearchedPatient(patient);
+        setHasSearched(true);
+        fetchMedicalRecords(npi);
+        setPatientName(patient.name);
+
+        // Make sure a mock request is created/approved on server so backend knows we have access
+        fetch('/api/access-requests', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ npi, doctorEmail: user.email, hospitalName: hospital.name })
+        })
+        .then(res => res.json())
+        .then(req => {
+          fetch(`/api/access-requests/${req.id}/status`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'approved' })
+          });
+        })
+        .catch(err => console.warn("Failed syncing access request for scanned QR", err));
+        
+      } else {
+        alert("Patient non trouvé dans l'annuaire national Santé+");
+      }
+    } else {
+      const cleanData = scannedData.trim();
+      const patient = SAMPLE_PATIENTS.find(p => p.npi === cleanData || p.email === cleanData);
+      if (patient) {
+        setUnlockedRecordNpi(patient.npi || '');
+        setUnlockedPatient(patient);
+        setSearchNpi(patient.npi || '');
+        setSearchedPatient(patient);
+        setHasSearched(true);
+        fetchMedicalRecords(patient.npi || '');
+        setPatientName(patient.name);
+      } else {
+        alert("Format de QR Code Santé+ invalide ou code inconnu. Veuillez scanner le QR officiel généré par l'application mobile du patient.");
+      }
+    }
+  };
+
+  const handleAddConsultationRecord = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!unlockedRecordNpi) return;
+
+    if (!newRecordInput.doctor || !newRecordInput.hospital || !newRecordInput.diagnosis) {
+      alert("Veuillez remplir les champs obligatoires (Médecin, Hôpital et Diagnostic)");
+      return;
+    }
+
+    fetch(`/api/medical-records/${unlockedRecordNpi}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newRecordInput)
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.success) {
+        setConsultationsList(prev => [data.record, ...prev]);
+        
+        const storageKey = `medical_records_${unlockedRecordNpi}`;
+        const localDataStr = localStorage.getItem(storageKey);
+        let currentLocal: any[] = [];
+        if (localDataStr) {
+          try { currentLocal = JSON.parse(localDataStr); } catch {}
+        }
+        localStorage.setItem(storageKey, JSON.stringify([data.record, ...currentLocal]));
+
+        setBlockchainSuccessMsg({
+          recordId: data.record.id,
+          txHash: data.blockchainTxHash
+        });
+
+        setNewRecordInput(prev => ({
+          ...prev,
+          reason: '',
+          diagnosis: '',
+          prescription: '',
+          notes: '',
+          treatmentPlan: '',
+          medication: '',
+          dosage: '',
+          frequency: '',
+          duration: '',
+          followUp: ''
+        }));
+        setShowAddRecordForm(false);
+      }
+    })
+    .catch(err => {
+      console.error("Failed to add medical record on server:", err);
+      alert("Erreur lors de l'enregistrement de la mise à jour sur le serveur.");
+    });
+  };
 
   // Success states
   const [successMsg, setSuccessMsg] = useState('');
@@ -640,10 +803,10 @@ export default function HospitalDashboard({
                 )}
               </div>
 
-              {/* MAIN EMISSION FORM (DOCKS PATIENT RECORDS) */}
+              {/* MAIN PORTAL AREA */}
               <div className="bg-white p-6 md:p-8 rounded-3xl border border-gray-100 shadow-2xs space-y-6 relative overflow-hidden">
-                {/* Shield alert overlay if patient is not authorized */}
-                {searchedPatient && activeRequest?.status !== 'approved' && (
+                {/* Shield alert overlay if patient is not authorized and not QR-scanned */}
+                {searchedPatient && activeRequest?.status !== 'approved' && unlockedRecordNpi !== searchedPatient.npi && (
                   <div className="absolute inset-0 bg-white/95 backdrop-blur-xs z-10 flex flex-col items-center justify-center p-6 text-center">
                     <div className="max-w-xs space-y-4">
                       <div className="w-12 h-12 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
@@ -663,132 +826,441 @@ export default function HospitalDashboard({
                   </div>
                 )}
 
-                <div className="space-y-1">
-                  <h3 className="text-lg font-bold font-sans text-gray-900">Nouveau dossier de frais ou ordonnance</h3>
-                  <p className="text-xs text-gray-400 font-sans">Rédigez des ordonnances ou factures instantanément réglables</p>
-                </div>
-
-                {successMsg && (
-                  <div className="p-4 bg-emerald-50 border border-emerald-100 text-[#00D26A] text-xs font-bold rounded-2xl flex items-center gap-2">
-                    <Check className="w-5 h-5" />
-                    <span>{successMsg}</span>
+                {/* Sub-tabs Selection for unlocked patient */}
+                {searchedPatient && (activeRequest?.status === 'approved' || unlockedRecordNpi === searchedPatient.npi) && (
+                  <div className="flex border-b border-gray-200 pb-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPraticienSubTab('consultations')}
+                      className={`px-4 py-2 rounded-xl text-xs font-sans font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        praticienSubTab === 'consultations'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 font-sans'
+                          : 'text-gray-500 hover:text-gray-800 font-sans'
+                      }`}
+                    >
+                      <Database className="w-4 h-4 text-emerald-600" />
+                      Dossier Médical Immuable ({consultationsList.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPraticienSubTab('billing')}
+                      className={`px-4 py-2 rounded-xl text-xs font-sans font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                        praticienSubTab === 'billing'
+                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 font-sans'
+                          : 'text-gray-500 hover:text-gray-800 font-sans'
+                      }`}
+                    >
+                      <ClipboardList className="w-4 h-4 text-emerald-600" />
+                      Facturation & Actes
+                    </button>
                   </div>
                 )}
 
-                <form onSubmit={handleEmitDoc} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {/* Patient target */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-gray-600 block">Nom du Patient</label>
-                      <div className="relative">
-                        <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                {/* SUBTAB 1: IMMUABLE MEDICAL HISTORY */}
+                {praticienSubTab === 'consultations' && searchedPatient && (activeRequest?.status === 'approved' || unlockedRecordNpi === searchedPatient.npi) && (
+                  <div className="space-y-6">
+                    {/* Add consultation trigger */}
+                    <div className="flex justify-between items-center bg-emerald-50/40 p-4 rounded-2xl border border-emerald-100/50">
+                      <div className="space-y-0.5">
+                        <h4 className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                          <Shield className="w-3.5 h-3.5 text-emerald-600" />
+                          Mise à jour médicale sécurisée
+                        </h4>
+                        <p className="text-[10px] text-gray-500 font-sans">
+                          Toutes les modifications sont signées cryptographiquement et ancrées sur Bitcoin.
+                        </p>
+                      </div>
+                      {!showAddRecordForm && (
+                        <button
+                          type="button"
+                          onClick={() => { setShowAddRecordForm(true); setBlockchainSuccessMsg(null); }}
+                          className="px-4 py-2 bg-[#059669] hover:bg-[#059669]/90 text-white rounded-xl text-xs font-bold font-sans transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          Ajouter une Entrée
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Success notification with Bitcoin Anchor details */}
+                    {blockchainSuccessMsg && (
+                      <div className="p-5 bg-emerald-50 border border-emerald-200 rounded-3xl text-xs text-emerald-800 space-y-3 relative overflow-hidden">
+                        <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-xl"></div>
+                        <div className="flex items-start gap-3">
+                          <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                          <div className="space-y-1">
+                            <strong className="text-sm block font-sans text-emerald-950">Mise à jour Médicale Enregistrée !</strong>
+                            <p className="text-gray-600 font-sans">
+                              L'entrée a été ajoutée avec succès au dossier de {searchedPatient.name} et verrouillée cryptographiquement.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="bg-white/80 border border-emerald-100 p-3 rounded-xl font-mono text-[10px] space-y-1">
+                          <div className="flex justify-between"><span className="text-gray-400">ID Diagnostic:</span> <span className="font-bold text-gray-800">{blockchainSuccessMsg.recordId}</span></div>
+                          <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-1">
+                            <span className="text-gray-400">Ancrage Bitcoin (TX Hash):</span> 
+                            <span className="font-semibold text-emerald-700 truncate max-w-[250px]" title={blockchainSuccessMsg.txHash}>{blockchainSuccessMsg.txHash}</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setBlockchainSuccessMsg(null)}
+                          className="px-3 py-1.5 bg-[#059669] text-white font-bold rounded-lg text-[10px] transition cursor-pointer"
+                        >
+                          Fermer
+                        </button>
+                      </div>
+                    )}
+
+                    {/* Add record form */}
+                    {showAddRecordForm && (
+                      <form onSubmit={handleAddConsultationRecord} className="p-5 border border-gray-100 rounded-3xl bg-gray-50/50 space-y-4 text-left">
+                        <div className="space-y-1 pb-2 border-b border-gray-200/60">
+                          <h4 className="text-xs font-bold text-gray-800">Ajouter une consultation médicale</h4>
+                          <p className="text-[10px] text-gray-400 font-sans">Veuillez renseigner les observations cliniques et le traitement.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-500 block">Nom du Médecin *</label>
+                            <input
+                              type="text"
+                              required
+                              value={newRecordInput.doctor}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, doctor: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-500 block">Hôpital / Clinique *</label>
+                            <input
+                              type="text"
+                              required
+                              value={newRecordInput.hospital}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, hospital: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-500 block">Raison de la visite</label>
+                            <input
+                              type="text"
+                              placeholder="Ex: Fièvre persistante, maux de tête"
+                              value={newRecordInput.reason}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, reason: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-gray-500 block">Diagnostic Clinique *</label>
+                            <input
+                              type="text"
+                              required
+                              placeholder="Ex: Paludisme simple"
+                              value={newRecordInput.diagnosis}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, diagnosis: e.target.value })}
+                              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-500 block">Prescription Médicamenteuse</label>
+                          <textarea
+                            placeholder="Ex: Artéméthère-Luméfantrine 20/120mg, 1 cp matin et soir..."
+                            value={newRecordInput.prescription}
+                            onChange={(e) => setNewRecordInput({ ...newRecordInput, prescription: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            rows={2}
+                          />
+                        </div>
+
+                        <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100/50 space-y-3">
+                          <h5 className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider">Carnet Détaillé du Traitement</h5>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <input
+                              type="text"
+                              placeholder="Objectif du plan de traitement"
+                              value={newRecordInput.treatmentPlan}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, treatmentPlan: e.target.value })}
+                              className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-sans"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Molécule / Classe thérapeutique"
+                              value={newRecordInput.medication}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, medication: e.target.value })}
+                              className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-sans"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Posologie (ex: 2 comprimés par jour)"
+                              value={newRecordInput.dosage}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, dosage: e.target.value })}
+                              className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-sans"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Fréquence (ex: Matin et Soir après repas)"
+                              value={newRecordInput.frequency}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, frequency: e.target.value })}
+                              className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-sans"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Durée (ex: 3 jours)"
+                              value={newRecordInput.duration}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, duration: e.target.value })}
+                              className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-sans"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Suivi (ex: Visite de contrôle sous 7 jours)"
+                              value={newRecordInput.followUp}
+                              onChange={(e) => setNewRecordInput({ ...newRecordInput, followUp: e.target.value })}
+                              className="px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-[11px] font-sans"
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-500 block">Observations cliniques & Conseils</label>
+                          <textarea
+                            placeholder="Observations supplémentaires, repos médical, conseils alimentaires..."
+                            value={newRecordInput.notes}
+                            onChange={(e) => setNewRecordInput({ ...newRecordInput, notes: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            rows={2}
+                          />
+                        </div>
+
+                        <div className="flex gap-2">
+                          <button
+                            type="submit"
+                            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition cursor-pointer"
+                          >
+                            Signer & Enregistrer la mise à jour
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setShowAddRecordForm(false)}
+                            className="px-5 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                          >
+                            Annuler
+                          </button>
+                        </div>
+                      </form>
+                    )}
+
+                    {/* consultations feed */}
+                    <div className="space-y-3 text-left">
+                      <h4 className="text-xs font-bold text-gray-600 block">Historique Médical du Patient ({consultationsList.length})</h4>
+                      
+                      {consultationsList.length === 0 ? (
+                        <div className="p-8 border border-dashed border-gray-200 rounded-2xl text-center text-gray-400">
+                          <Database className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+                          <p className="text-xs">Aucune consultation enregistrée pour ce dossier.</p>
+                        </div>
+                      ) : (
+                        consultationsList.map(cons => (
+                          <div key={cons.id} className="border border-gray-100 rounded-2xl bg-gray-50/20 overflow-hidden shadow-3xs">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedConsultationId(expandedConsultationId === cons.id ? null : cons.id)}
+                              className="w-full p-4 text-left hover:bg-gray-50/50 flex justify-between items-start transition cursor-pointer text-xs font-sans"
+                            >
+                              <div className="space-y-1.5 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-bold text-gray-900 text-sm">{cons.date} à {cons.time}</span>
+                                  {cons.verified && <span className="bg-emerald-50 text-[#00D26A] border border-emerald-100 text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md">Certifié Bitcoin</span>}
+                                </div>
+                                <p className="text-gray-500 font-sans">
+                                  Médecin : <strong className="text-gray-700">{cons.doctor}</strong> • Hôpital : <strong className="text-gray-700">{cons.hospital}</strong>
+                                </p>
+                                <p className="font-bold text-emerald-950 font-sans">Diag: {cons.diagnosis}</p>
+                              </div>
+                              <Eye className={`w-4 h-4 mt-0.5 transition ${expandedConsultationId === cons.id ? 'text-emerald-600' : 'text-gray-400'}`} />
+                            </button>
+
+                            {expandedConsultationId === cons.id && (
+                              <div className="px-4 pb-4 border-t border-gray-100 bg-white text-xs font-sans space-y-3 pt-3">
+                                <div className="grid md:grid-cols-2 gap-3">
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-gray-400">Motif de visite</span>
+                                    <p className="text-gray-700 mt-0.5">{cons.reason}</p>
+                                  </div>
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-gray-400">Ordonnance / Traitement</span>
+                                    <p className="text-gray-700 mt-0.5">{cons.prescription || 'Pas de prescription'}</p>
+                                  </div>
+                                </div>
+                                
+                                {cons.notes && (
+                                  <div>
+                                    <span className="text-[10px] uppercase font-bold text-gray-400">Observations cliniques</span>
+                                    <p className="text-gray-700 mt-0.5">{cons.notes}</p>
+                                  </div>
+                                )}
+
+                                {(cons.treatmentPlan || cons.medication || cons.dosage || cons.frequency || cons.duration || cons.followUp) && (
+                                  <div className="p-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
+                                    <span className="text-[9px] font-extrabold uppercase text-emerald-900 tracking-wider block mb-1.5 font-sans">📘 Carnet de traitement détaillé</span>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-emerald-800 text-[11px]">
+                                      {cons.treatmentPlan && <div><span className="font-bold">Plan:</span> {cons.treatmentPlan}</div>}
+                                      {cons.medication && <div><span className="font-bold">Molécule:</span> {cons.medication}</div>}
+                                      {cons.dosage && <div><span className="font-bold">Posologie:</span> {cons.dosage}</div>}
+                                      {cons.frequency && <div><span className="font-bold">Fréquence:</span> {cons.frequency}</div>}
+                                      {cons.duration && <div><span className="font-bold">Durée:</span> {cons.duration}</div>}
+                                      {cons.followUp && <div><span className="font-bold">Suivi:</span> {cons.followUp}</div>}
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="p-2.5 bg-indigo-50/40 rounded-xl border border-indigo-100 text-[10px] text-indigo-900 font-mono flex items-center gap-1 break-all">
+                                  <Hash className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                  <span>Hash immuable : {cons.hash}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 2: BILLING & PROCEDURES */}
+                {(praticienSubTab === 'billing' || !searchedPatient) && (
+                  <>
+                    <div className="space-y-1 text-left">
+                      <h3 className="text-lg font-bold font-sans text-gray-900">Nouveau dossier de frais ou ordonnance</h3>
+                      <p className="text-xs text-gray-400 font-sans">Rédigez des ordonnances ou factures instantanément réglables</p>
+                    </div>
+
+                    {successMsg && (
+                      <div className="p-4 bg-emerald-50 border border-emerald-100 text-[#00D26A] text-xs font-bold rounded-2xl flex items-center gap-2">
+                        <Check className="w-5 h-5" />
+                        <span>{successMsg}</span>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleEmitDoc} className="space-y-4 text-left">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Patient target */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-600 block">Nom du Patient</label>
+                          <div className="relative">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input
+                              type="text"
+                              required
+                              value={patientName}
+                              onChange={(e) => setPatientName(e.target.value)}
+                              className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                              placeholder="Ex: Bienvenue Segnon"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Document Type */}
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-600 block">Catégorie d'acte</label>
+                          <select
+                            value={docType}
+                            onChange={(e) => setDocType(e.target.value as any)}
+                            className="w-full bg-gray-50 border border-gray-200 text-xs font-sans font-semibold px-3 py-2 rounded-xl text-gray-800"
+                          >
+                            <option value="analyses">Analyses Médicales / Labo</option>
+                            <option value="prescription">Ordonnance Pharmacie</option>
+                            <option value="devis">Devis de Soins / Consultation</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Document descriptive title */}
+                      <div className="space-y-1">
+                        <label className="text-xs font-bold text-gray-600 block">Libellé du dossier médical</label>
                         <input
                           type="text"
                           required
-                          value={patientName}
-                          onChange={(e) => setPatientName(e.target.value)}
-                          className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
-                          placeholder="Ex: Bienvenue Segnon"
+                          value={docTitle}
+                          onChange={(e) => setDocTitle(e.target.value)}
+                          className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                          placeholder="Ex: Traitement anti-paludéen ou NFS"
                         />
                       </div>
-                    </div>
 
-                    {/* Document Type */}
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-gray-600 block">Catégorie d'acte</label>
-                      <select
-                        value={docType}
-                        onChange={(e) => setDocType(e.target.value as any)}
-                        className="w-full bg-gray-50 border border-gray-200 text-xs font-sans font-semibold px-3 py-2 rounded-xl text-gray-800"
-                      >
-                        <option value="analyses">Analyses Médicales / Labo</option>
-                        <option value="prescription">Ordonnance Pharmacie</option>
-                        <option value="devis">Devis de Soins / Consultation</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Document descriptive title */}
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-600 block">Libellé du dossier médical</label>
-                    <input
-                      type="text"
-                      required
-                      value={docTitle}
-                      onChange={(e) => setDocTitle(e.target.value)}
-                      className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
-                      placeholder="Ex: Traitement anti-paludéen ou NFS"
-                    />
-                  </div>
-
-                  {/* ITEMS LIST BUILDER */}
-                  <div className="space-y-3 p-4 bg-gray-50/50 border border-gray-100 rounded-2xl">
-                    <span className="text-xs font-bold text-gray-700 block">Actes ou Produits inclus</span>
-                    
-                    {items.length > 0 ? (
-                      <div className="space-y-2">
-                        {items.map((it, idx) => (
-                          <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-gray-100 text-xs">
-                            <div className="font-sans">
-                              <span className="font-bold text-gray-800">{it.name}</span>
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono font-bold text-gray-900">{it.priceXOF.toLocaleString('fr-FR')} XOF</span>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveItem(idx)}
-                                className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                      {/* ITEMS LIST BUILDER */}
+                      <div className="space-y-3 p-4 bg-gray-50/50 border border-gray-100 rounded-2xl">
+                        <span className="text-xs font-bold text-gray-700 block">Actes ou Produits inclus</span>
+                        
+                        {items.length > 0 ? (
+                          <div className="space-y-2">
+                            {items.map((it, idx) => (
+                              <div key={idx} className="flex justify-between items-center bg-white p-2.5 rounded-xl border border-gray-100 text-xs">
+                                <div className="font-sans">
+                                  <span className="font-bold text-gray-800">{it.name}</span>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="font-mono font-bold text-gray-900">{it.priceXOF.toLocaleString('fr-FR')} XOF</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveItem(idx)}
+                                    className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-[11px] text-gray-400 italic">Aucun élément ajouté. Veuillez en ajouter ci-dessous.</p>
-                    )}
+                        ) : (
+                          <p className="text-[11px] text-gray-400 italic">Aucun élément ajouté. Veuillez en ajouter ci-dessous.</p>
+                        )}
 
-                    {/* Add item sub-form */}
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-2 pt-2 border-t border-gray-100">
-                      <div className="md:col-span-7">
-                        <input
-                          type="text"
-                          value={newItemName}
-                          onChange={(e) => setNewItemName(e.target.value)}
-                          placeholder="Désignation (ex: Doliprane 1g)"
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
-                        />
+                        {/* Add item sub-form */}
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-2 pt-2 border-t border-gray-100">
+                          <div className="md:col-span-7">
+                            <input
+                              type="text"
+                              value={newItemName}
+                              onChange={(e) => setNewItemName(e.target.value)}
+                              placeholder="Désignation (ex: Doliprane 1g)"
+                              className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            />
+                          </div>
+                          <div className="md:col-span-3">
+                            <input
+                              type="number"
+                              value={newItemPrice}
+                              onChange={(e) => setNewItemPrice(e.target.value)}
+                              placeholder="Tarif XOF"
+                              className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleAddItem}
+                            className="md:col-span-2 py-1.5 px-2 bg-slate-900 hover:bg-slate-950 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            <PlusCircle className="w-3.5 h-3.5" />
+                            Ajouter
+                          </button>
+                        </div>
                       </div>
-                      <div className="md:col-span-3">
-                        <input
-                          type="number"
-                          value={newItemPrice}
-                          onChange={(e) => setNewItemPrice(e.target.value)}
-                          placeholder="Tarif XOF"
-                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-xl text-xs font-sans text-gray-800"
-                        />
-                      </div>
+
+                      {/* Emit triggers */}
                       <button
-                        type="button"
-                        onClick={handleAddItem}
-                        className="md:col-span-2 py-1.5 px-2 bg-slate-900 hover:bg-slate-950 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1 cursor-pointer"
+                        type="submit"
+                        className="w-full py-3.5 bg-[#059669] hover:bg-[#059669]/95 text-white font-bold font-sans rounded-2xl text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer"
                       >
-                        <PlusCircle className="w-3.5 h-3.5" />
-                        Ajouter
+                        <Sparkles className="w-4 h-4" />
+                        Mettre à disposition du Patient
                       </button>
-                    </div>
-                  </div>
-
-                  {/* Emit triggers */}
-                  <button
-                    type="submit"
-                    className="w-full py-3.5 bg-[#059669] hover:bg-[#059669]/95 text-white font-bold font-sans rounded-2xl text-xs flex items-center justify-center gap-2 shadow-xs cursor-pointer"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    Mettre à disposition du Patient
-                  </button>
-                </form>
+                    </form>
+                  </>
+                )}
               </div>
             </div>
 
@@ -983,6 +1455,16 @@ export default function HospitalDashboard({
         )}
 
       </AnimatePresence>
+
+      {/* Camera QR Scanner Modal */}
+      {showScanner && (
+        <QRScanner
+          onScan={handleScanQR}
+          onClose={() => setShowScanner(false)}
+          title="Scanner le QR Code Patient"
+          instruction="Présentez le QR Code de consultation généré sur le mobile du patient."
+        />
+      )}
     </div>
   );
 }

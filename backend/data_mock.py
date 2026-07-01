@@ -1,4 +1,4 @@
-from models import Hospital, MedicalDocument, Patient, Appointment, Invoice, AccessRequest
+from backend.models import Hospital, MedicalDocument, Patient, Appointment, Invoice, AccessRequest
 from typing import List, Dict
 
 # Satoshis exchange rate factor: 1 XOF = 1.666 Sats

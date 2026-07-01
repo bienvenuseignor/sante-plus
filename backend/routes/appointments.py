@@ -1,8 +1,8 @@
 from fastapi import APIRouter, HTTPException, Body
 from typing import List
-from models import Appointment
+from backend.models import Appointment
 import uuid
-from data_mock import APPOINTMENTS_DB
+from backend.data_mock import APPOINTMENTS_DB
 
 router = APIRouter(prefix="/api/appointments", tags=["appointments"])
 
