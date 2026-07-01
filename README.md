@@ -1,20 +1,38 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Santé+ Benin
 
-# Run and deploy your AI Studio app
+Santé+ est une application web de démonstration orientée santé, combinant un front-end React/Vite et un back-end FastAPI pour illustrer l’accès aux services hospitaliers, aux rendez-vous et à un parcours de paiement.
 
-This contains everything you need to run your app locally.
+## Fonctionnalités principales
+- Tableau de bord hospitalier interactif
+- Prise de rendez-vous
+- Gestion du portefeuille et des paiements
+- API backend pour les services de santé
 
-View your app in AI Studio: https://ai.studio/apps/7121d5fe-15f1-4952-bdb6-cf76a9c7af75
+## Prérequis
+- Node.js 18+
+- Python 3.10+
+- npm
 
-## Run Locally
+## Installation
 
-**Prerequisites:**  Node.js
+### Frontend
+```bash
+npm install
+npm run dev
+```
 
+### Backend
+```bash
+cd backend
+pip install -r requirements.txt
+python main.py
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Démarrage rapide
+```bash
+./LANCER_DEMO.sh
+```
+
+## Structure du projet
+- frontend React/Vite dans le dossier src/
+- API FastAPI dans le dossier backend/
